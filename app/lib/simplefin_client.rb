@@ -40,6 +40,15 @@ class SimplefinClient
     invoke_request("/accounts", query_params)
   end
 
+  # Method to fetch account holdings for investment accounts
+  def get_holdings(account_id)
+    query_params = {
+      "account" => account_id,
+      "start-date" => future_date  # Future date to avoid transactions, get holdings only
+    }
+    invoke_request("/accounts", query_params)
+  end
+
   private
 
   def future_date

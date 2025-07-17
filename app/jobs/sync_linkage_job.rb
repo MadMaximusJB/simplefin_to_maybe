@@ -77,6 +77,24 @@ class SyncLinkageJob < ApplicationJob
         if maybe_account.accountable_type == "Investment" # Investment
           log(linkage, "Updating Balance for '#{Time.at(simplefin_account_with_balance.dig("balance-date")).strftime("%m/%d/%Y")}'")
           maybe_client.upsert_account_valuation(maybe_account.identifier, simplefin_account_with_balance)
+          
+          # Sync holdings for investment accounts
+          log(linkage, "Fetching holdings data from SimpleFIN")
+          holdings_response = simplefin_client.get_holdings(simplefin_account.identifier)
+          
+          if holdings_response[:success] && holdings_response[:response]
+            holdings_data = holdings_response[:response].dig("accounts")&.first&.dig("holdings")
+            
+            if holdings_data && holdings_data.any?
+              log(linkage, "Syncing #{holdings_data.length} holdings")
+              maybe_client.upsert_holdings(maybe_account.identifier, holdings_data)
+              log(linkage, "Holdings sync completed")
+            else
+              log(linkage, "No holdings data found for investment account")
+            end
+          else
+            log(linkage, "Failed to retrieve holdings from SimpleFIN: #{holdings_response[:error_message]}", :warn)
+          end
         end
       else
         log(linkage, "Failed to retrieve data from SimpleFIN", :error)

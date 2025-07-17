@@ -15,7 +15,7 @@ x-rails-env: &rails_env
 services:
   web:
     container_name: simplefin_to_maybe
-    image: ghcr.io/steveredden/simplefin_to_maybe:latest
+    image: ghcr.io/madmaximusjb/simplefin_to_maybe:latest
     volumes:
       - app-storage:/rails/storage
     ports:

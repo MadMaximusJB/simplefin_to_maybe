@@ -201,6 +201,97 @@ end
     execute(query, [transaction_uuid])
   end
 
+  # Method to find or create a security by ticker symbol
+  def find_or_create_security(ticker, name = nil, exchange_operating_mic = nil)
+    # First try to find existing security
+    query = <<-SQL
+      SELECT id FROM public.securities 
+      WHERE UPPER(ticker) = UPPER($1) 
+      AND COALESCE(UPPER(exchange_operating_mic), '') = COALESCE(UPPER($2), '')
+      LIMIT 1
+    SQL
+    
+    existing_security = execute(query, [ticker, exchange_operating_mic])
+    
+    if existing_security.any?
+      return existing_security.first["id"]
+    end
+    
+    # Create new security if not found
+    security_uuid = SecureRandom.uuid
+    insert_query = <<-SQL
+      INSERT INTO public.securities (
+        id, ticker, name, exchange_operating_mic, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, NOW(), NOW()
+      );
+    SQL
+    
+    execute(insert_query, [security_uuid, ticker, name, exchange_operating_mic])
+    Rails.logger.info "Created new security: #{ticker} (#{security_uuid})"
+    
+    return security_uuid
+  end
+
+  # Method to upsert holdings for an investment account
+  def upsert_holdings(account_id, holdings_data, date = Time.current.to_date)
+    return if holdings_data.nil? || holdings_data.empty?
+    
+    Rails.logger.info "Syncing #{holdings_data.length} holdings for account #{account_id}"
+    
+    holdings_data.each do |holding|
+      ticker = holding.dig("symbol")
+      name = holding.dig("description")
+      shares = holding.dig("shares")
+      market_value = holding.dig("market_value")
+      currency = holding.dig("currency") || "USD"
+      
+      next if ticker.nil? || shares.nil? || market_value.nil?
+      
+      # Find or create the security
+      security_id = find_or_create_security(ticker, name)
+      
+      # Calculate price per share
+      shares_decimal = BigDecimal(shares.to_s)
+      market_value_decimal = BigDecimal(market_value.to_s)
+      price_per_share = shares_decimal.zero? ? BigDecimal("0") : (market_value_decimal / shares_decimal)
+      
+      # Check if holding already exists for this date
+      existing_holding_query = <<-SQL
+        SELECT id FROM public.holdings
+        WHERE account_id = $1 AND security_id = $2 AND date = $3 AND currency = $4
+        LIMIT 1
+      SQL
+      
+      existing_holding = execute(existing_holding_query, [account_id, security_id, date, currency])
+      
+      if existing_holding.any?
+        # Update existing holding
+        update_query = <<-SQL
+          UPDATE public.holdings
+          SET qty = $1, price = $2, amount = $3, updated_at = NOW()
+          WHERE account_id = $4 AND security_id = $5 AND date = $6 AND currency = $7
+        SQL
+        
+        execute(update_query, [shares_decimal, price_per_share, market_value_decimal, account_id, security_id, date, currency])
+        Rails.logger.info "Updated holding for #{ticker}: #{shares} shares @ #{price_per_share}"
+      else
+        # Insert new holding
+        holding_uuid = SecureRandom.uuid
+        insert_query = <<-SQL
+          INSERT INTO public.holdings (
+            id, account_id, security_id, date, qty, price, amount, currency, created_at, updated_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()
+          );
+        SQL
+        
+        execute(insert_query, [holding_uuid, account_id, security_id, date, shares_decimal, price_per_share, market_value_decimal, currency])
+        Rails.logger.info "Created new holding for #{ticker}: #{shares} shares @ #{price_per_share}"
+      end
+    end
+  end
+
   def close
     @connection.close if @connection
   end
