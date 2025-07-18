@@ -39,6 +39,6 @@ However, you can still execute syncs from the `rails console` - [details here](d
 - [X] Docker Compose
 - [X] Web UI
 - [X] Loan Interest & Escrow Offsets
+- [X] Securities/Trades/Holdings
 - [ ] Property Valuations
-- [ ] Securities/Trades/Holdings
 - [ ] More...?
